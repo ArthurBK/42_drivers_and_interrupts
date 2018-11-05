@@ -20,6 +20,9 @@
 #include <linux/ctype.h>
 #include <asm/io.h>
 
+#include <linux/seq_file.h>
+
+
 static struct s_stroke {
 	unsigned char		key;
 	unsigned char		state;

