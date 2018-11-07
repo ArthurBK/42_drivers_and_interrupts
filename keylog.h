@@ -1,3 +1,5 @@
+#ifndef _KEYLOG_H_
+#define _KEYLOG_H_
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -23,11 +25,29 @@
 #include <linux/seq_file.h>
 
 
-static struct s_stroke {
+#include <linux/syscalls.h>
+#include <linux/file.h>
+#include <linux/fcntl.h>
+#include <asm/uaccess.h>
+
+struct s_keyboard_map {
+  int   key;
+  int   ascii;
+  char  *str;
+  int   shift_ascii;
+  char  *shift_str;
+  bool  pressed;
+  size_t  nb_pressed;
+  size_t  nb_released;
+};
+
+struct s_stroke {
 	unsigned char		key;
 	unsigned char		state;
-	char			name[25];
+	const char		*name;
 	char			value;
 	struct tm		time;
 	struct list_head	stroke_lst;
 };
+
+#endif

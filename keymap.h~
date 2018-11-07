@@ -1,6 +1,15 @@
-#include "keylog.h"
+struct keyboard_map {
+  int   key;
+  int   ascii;
+  char  *str;
+  int   shift_ascii;
+  char  *shift_str;
+  bool  pressed;
+  size_t  nb_pressed;
+  size_t  nb_released;
+};
 
-struct s_keyboard_map keyboard_mapping[] = {
+struct keyboard_map keyboard_mapping[] = {
   { 0, -1, "Dumb", -1, "Dumb", false, 0, 0 },
   { 1, 27, "Escape", 27, "Escape", false, 0, 0 },
   { 2, 49, "one", 33, "exclam", false, 0, 0 },
@@ -256,5 +265,5 @@ struct s_keyboard_map keyboard_mapping[] = {
   { 252, -1, "nul", -1, "nul", false, 0, 0 },
   { 253, -1, "nul", -1, "nul", false, 0, 0 },
   { 254, -1, "nul", -1, "nul", false, 0, 0 },
-  { 255, -1, "nul", -1, "nul", false, 0, 0}
+  { 255, -1, "nul", -1, "nul", false}
 };
