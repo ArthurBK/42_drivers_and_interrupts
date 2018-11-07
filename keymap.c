@@ -258,3 +258,5 @@ struct s_keyboard_map keyboard_mapping[] = {
   { 254, -1, "nul", -1, "nul", false, 0, 0 },
   { 255, -1, "nul", -1, "nul", false, 0, 0}
 };
+
+EXPORT_SYMBOL(keyboard_mapping);

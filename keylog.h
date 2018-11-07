@@ -1,5 +1,6 @@
 #ifndef _KEYLOG_H_
 #define _KEYLOG_H_
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/buffer_head.h>
@@ -77,12 +78,6 @@ enum {
 	PRESSED
 };
 
-DEFINE_SPINLOCK(mr_lock);
-LIST_HEAD(head_stroke_lst);
-LIST_HEAD(head_keymap_lst);
-
-struct proc_dir_entry	*entry;
-bool 			shift = 0;
-bool 			caps_lock = 0;
+//struct proc_dir_entry	*entry;
 
 #endif

