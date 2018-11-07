@@ -2,6 +2,7 @@
 
 extern struct s_keyboard_map keyboard_mapping[];
 LIST_HEAD(head_keymap_lst);
+EXPORT_SYMBOL(head_keymap_lst);
 DEFINE_SPINLOCK(mr_lock);
 
 int cmp_pressed(void *priv, struct list_head *a, struct list_head *b)
@@ -34,37 +35,37 @@ int stats_show(struct seq_file *seq_file, void *p)
 
 	j = 0;
 	for (i = 0; i < MAX_KEYS; ++i) {
-		keymap_elem = kmalloc(sizeof(struct s_keyboard_map_lst ), GFP_ATOMIC);
+		keymap_elem = kmalloc(sizeof(*keymap_elem), GFP_ATOMIC);
+		if (!keymap_elem)
+			continue;
 		entry = keyboard_mapping[i];
 		keymap_elem->key = entry.key;
 		keymap_elem->ascii = entry.ascii;
 		keymap_elem->str = entry.str;
 		keymap_elem->nb_pressed = entry.nb_pressed;
 		keymap_elem->nb_released = entry.nb_released;
-		list_add(&(keymap_elem->map_lst), &head_keymap_lst);
+		list_add(&keymap_elem->map_lst, &head_keymap_lst);
 	}
 	list_sort(NULL, &head_keymap_lst, cmp_pressed);
-	seq_printf(seq_file, "TOP 3 PRESSED KEYS\n");
-	list_for_each_entry(keymap_iter, &head_keymap_lst, map_lst)
-	{
+	seq_puts(seq_file, "TOP 3 PRESSED KEYS\n");
+	list_for_each_entry(keymap_iter, &head_keymap_lst, map_lst) {
 		if (keymap_iter->nb_pressed != 0 && j < 3) {
 			seq_printf(seq_file, "%s (%d) - %li times\n",
 				   keymap_iter->str,
 				   keymap_iter->key,
-			   	   keymap_iter->nb_pressed);
+				   keymap_iter->nb_pressed);
 			++j;
 		}
 	}
 	j = 0;
-	seq_printf(seq_file, "TOP 3 RELEASED KEYS\n");
+	seq_puts(seq_file, "TOP 3 RELEASED KEYS\n");
 	list_sort(NULL, &head_keymap_lst, cmp_released);
-	list_for_each_entry(keymap_iter, &head_keymap_lst, map_lst)
-	{
+	list_for_each_entry(keymap_iter, &head_keymap_lst, map_lst) {
 		if (keymap_iter->nb_pressed != 0 && j < 3) {
 			seq_printf(seq_file, "%s (%d) - %li times\n",
 				   keymap_iter->str,
 				   keymap_iter->key,
-			   	   keymap_iter->nb_released);
+				   keymap_iter->nb_released);
 			++j;
 		}
 		kfree(keymap_iter);
@@ -84,13 +85,13 @@ static int stats_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t	stats_write(struct file *file, const char __user *buf,
-			  size_t size, loff_t *offset)
+			    size_t size, loff_t *offset)
 {
 	return 0;
 }
 
 static ssize_t stats_read(struct file *file, char __user *buf, size_t size,
-			 loff_t *offset)
+			  loff_t *offset)
 {
 	int	ret;
 
@@ -124,6 +125,4 @@ struct miscdevice		stats_dev = {
 	MODULE_STATS_NAME,
 	&stats_file_fops
 };
-
-EXPORT_SYMBOL(head_keymap_lst);
 EXPORT_SYMBOL(stats_dev);

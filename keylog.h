@@ -43,14 +43,14 @@
 #define BUF_SIZE		PAGE_SIZE
 
 struct s_keyboard_map {
-  int   key;
-  int   ascii;
-  char  *str;
-  int   shift_ascii;
-  char  *shift_str;
-  bool  pressed;
-  size_t  nb_pressed;
-  size_t  nb_released;
+	int   key;
+	int   ascii;
+	char  *str;
+	int   shift_ascii;
+	char  *shift_str;
+	bool  pressed;
+	size_t  nb_pressed;
+	size_t  nb_released;
 };
 
 struct s_stroke {
@@ -63,21 +63,20 @@ struct s_stroke {
 };
 
 struct s_keyboard_map_lst {
-  	int	key;
-  	int	ascii;
-  	char	*str;
-  	size_t	nb_pressed;
-  	size_t	nb_released;
+	int			key;
+	int			ascii;
+	char			*str;
+	size_t			nb_pressed;
+	size_t			nb_released;
 	struct list_head	map_lst;
 };
 
-typedef ssize_t (*vfs_write_type)(struct file *, const char __user *, size_t, loff_t *);
+typedef ssize_t (*vfs_write_type)(struct file *,
+				  const char __user *, size_t, loff_t *);
 
 enum {
 	RELEASED,
 	PRESSED
 };
-
-//struct proc_dir_entry	*entry;
 
 #endif

