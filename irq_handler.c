@@ -3,8 +3,8 @@
 extern struct s_keyboard_map keyboard_mapping[];
 extern struct list_head head_stroke_lst;
 
-bool shift = -1;
-bool caps_lock = -1;
+bool shift = 0;
+bool caps_lock = 0;
 DEFINE_SPINLOCK(scan_lock);
 
 static void fill_stroke(struct s_stroke *new, struct s_keyboard_map *entry,
